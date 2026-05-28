@@ -1,31 +1,106 @@
-// 定义LED引脚
-const int ledPin = 2;  
+const int LED_PIN = 2;
 
-// 设置PWM属性
-const int freq = 5000;          // 频率 5000Hz
-const int resolution = 8;       // 分辨率 8位 (0-255)
+// 时间参数(ms)，拉大差值，视觉区分明显
+const unsigned long SHORT_ON  = 150;   // 短闪点亮时间
+const unsigned long LONG_ON   = 800;   // 长闪点亮时间
+const unsigned long GAP       = 200;   // 单个闪烁之间间隔
+const unsigned long SOS_PAUSE = 2000;   // 一组SOS结束后长停顿
+
+// 运行状态
+unsigned long currentTime;
+unsigned long previousTime = 0;
+int state = 0;  // 0:空闲 1:三短闪 2:三长闪 3:末尾三短闪
+int blinkCnt = 0;
+bool ledStatus = false;
 
 void setup() {
-  Serial.begin(115200);
-
-  // 【新版用法】直接将引脚、频率和分辨率绑定
-  // 它会自动返回一个关联的通道（如果需要的话）
-  ledcAttach(ledPin, freq, resolution);
+  pinMode(LED_PIN, OUTPUT);
+  digitalWrite(LED_PIN, LOW);
 }
 
 void loop() {
-  // 逐渐变亮
-  for(int dutyCycle = 0; dutyCycle <= 255; dutyCycle++){   
-    // 【新版用法】直接通过引脚号写入，不再需要指定通道
-    ledcWrite(ledPin, dutyCycle);   
-    delay(10);
-  }
+  currentTime = millis();
 
-  // 逐渐变暗
-  for(int dutyCycle = 255; dutyCycle >= 0; dutyCycle--){
-    ledcWrite(ledPin, dutyCycle);   
-    delay(10);
+  switch (state) {
+    case 0:
+      // 空闲等待，延时结束开始新一轮SOS
+      if (currentTime - previousTime >= SOS_PAUSE) {
+        state = 1;
+        blinkCnt = 0;
+        ledStatus = true;
+        digitalWrite(LED_PIN, HIGH);
+        previousTime = currentTime;
+      }
+      break;
+
+    // 第一组：3次短闪
+    case 1:
+      if (ledStatus) {
+        // 点亮时长结束，熄灭
+        if (currentTime - previousTime >= SHORT_ON) {
+          ledStatus = false;
+          digitalWrite(LED_PIN, LOW);
+          previousTime = currentTime;
+        }
+      } else {
+        // 间隔结束，准备下一次闪烁
+        if (currentTime - previousTime >= GAP) {
+          blinkCnt++;
+          if (blinkCnt >= 3) {
+            // 3次短闪完成，进入长闪阶段
+            state = 2;
+            blinkCnt = 0;
+          }
+          ledStatus = true;
+          digitalWrite(LED_PIN, HIGH);
+          previousTime = currentTime;
+        }
+      }
+      break;
+
+    // 第二组：3次长闪
+    case 2:
+      if (ledStatus) {
+        if (currentTime - previousTime >= LONG_ON) {
+          ledStatus = false;
+          digitalWrite(LED_PIN, LOW);
+          previousTime = currentTime;
+        }
+      } else {
+        if (currentTime - previousTime >= GAP) {
+          blinkCnt++;
+          if (blinkCnt >= 3) {
+            // 3次长闪完成，进入最后一组短闪
+            state = 3;
+            blinkCnt = 0;
+          }
+          ledStatus = true;
+          digitalWrite(LED_PIN, HIGH);
+          previousTime = currentTime;
+        }
+      }
+      break;
+
+    // 第三组：末尾3次短闪
+    case 3:
+      if (ledStatus) {
+        if (currentTime - previousTime >= SHORT_ON) {
+          ledStatus = false;
+          digitalWrite(LED_PIN, LOW);
+          previousTime = currentTime;
+        }
+      } else {
+        if (currentTime - previousTime >= GAP) {
+          blinkCnt++;
+          if (blinkCnt >= 3) {
+            // 整组SOS完成，回到空闲状态
+            state = 0;
+          }
+          ledStatus = true;
+          digitalWrite(LED_PIN, HIGH);
+          previousTime = currentTime;
+        }
+      }
+      break;
   }
-  
-  Serial.println("Breathing cycle completed");
 }
